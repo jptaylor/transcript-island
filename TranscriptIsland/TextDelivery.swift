@@ -3,10 +3,14 @@ import ApplicationServices
 import Carbon.HIToolbox
 import os
 
-/// Where the text should go. Captured when recording starts, before anything can move focus.
+/// The app the text should go to: the one in front when dictation starts.
+///
+/// Only the app is noted at that point. Looking at its text field needs the Accessibility
+/// API, and macOS shows an indicator in the Dynamic Island whenever an app uses that access.
+/// That would sit on top of the dictation bar while you talk, so the check waits until the
+/// text is delivered.
 struct InsertionTarget {
     let app: NSRunningApplication
-    let hasEditableFocus: Bool
 }
 
 enum DeliveryOutcome: Equatable {
@@ -21,33 +25,40 @@ enum DeliveryOutcome: Equatable {
 enum TextDelivery {
     private static let log = Logger.app("Delivery")
 
+    /// The app in front (other than this one). Makes no Accessibility calls.
     static func captureTarget() -> InsertionTarget? {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier
         else { return nil }
-        let target = InsertionTarget(app: app, hasEditableFocus: focusedElementIsEditableText(in: app))
-        log.notice("target \(app.bundleIdentifier ?? "?", privacy: .public): editable \(target.hasEditableFocus), accessibility \(AXIsProcessTrusted())")
-        return target
+        return InsertionTarget(app: app)
     }
 
-    /// Always copies `text` to the clipboard (as a backup), then pastes it into the
-    /// captured text field if there was one and Accessibility access is granted.
+    /// Always copies `text` to the clipboard (as a backup). Then, if Accessibility access is
+    /// granted and the target app has a text field focused, pastes it there.
     static func deliver(_ text: String, to target: InsertionTarget?) async -> DeliveryOutcome {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
-        guard let target, target.hasEditableFocus, AXIsProcessTrusted(), !target.app.isTerminated else {
-            let accessibilityOff = target != nil && !AXIsProcessTrusted()
-            log.notice("copied only (target \(target != nil), editable \(target?.hasEditableFocus ?? false), accessibility off \(accessibilityOff))")
-            return .copied(accessibilityOff: accessibilityOff)
+        guard let target, !target.app.isTerminated else {
+            log.notice("copied only: no app to type into")
+            return .copied(accessibilityOff: false)
+        }
+        let name = target.app.bundleIdentifier ?? "pid \(target.app.processIdentifier)"
+        guard AXIsProcessTrusted() else {
+            log.notice("copied only: Accessibility access is off (target \(name, privacy: .public))")
+            return .copied(accessibilityOff: true)
         }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != target.app.processIdentifier {
             target.app.activate(from: .current, options: [])
             try? await Task.sleep(for: .milliseconds(200))
         }
+        guard focusedElementIsEditableText(in: target.app) else {
+            log.notice("copied only: no text field focused in \(name, privacy: .public)")
+            return .copied(accessibilityOff: false)
+        }
         postCommandV()
-        log.notice("pasted into \(target.app.bundleIdentifier ?? "?", privacy: .public)")
+        log.notice("pasted into \(name, privacy: .public)")
         return .inserted(appName: target.app.localizedName ?? "the app")
     }
 

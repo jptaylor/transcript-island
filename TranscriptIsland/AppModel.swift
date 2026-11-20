@@ -54,7 +54,7 @@ final class AppModel {
     private var session: DictationSession? {
         didSet { updateEscapeKey() }
     }
-    /// The text field to type into, captured when dictation starts.
+    /// The app to type into: the one in front when dictation starts.
     private var target: InsertionTarget?
     /// Finish was asked for while still starting up; done as soon as it's listening.
     private var pendingFinish: FinishTrigger?
@@ -114,6 +114,9 @@ final class AppModel {
         resetTask?.cancel()
         refreshPermissions()
         target = insertIntoFocusedField ? TextDelivery.captureTarget() : nil
+        #if DEBUG
+        if let harness = Self.harness { target = harness.pasteTarget.map(InsertionTarget.init) }
+        #endif
 
         let session = DictationSession()
         self.session = session
@@ -216,7 +219,7 @@ final class AppModel {
     private func deliver(_ text: String, finishedBy trigger: FinishTrigger) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
-        if writeHarnessReport(trimmed, finishedBy: trigger) { return }
+        if await finishHarnessRun(trimmed, finishedBy: trigger) { return }
         #endif
 
         let outcome: DeliveryOutcome
@@ -314,11 +317,18 @@ final class AppModel {
 /// - `--island-demo`: plays a fake dictation in the island, then quits.
 /// - `--dictate-file <audio> <report.txt>`: a full dictation with the file in place of the
 ///   microphone, played at real speed and followed by silence, so the pause detector ends it.
-///   Writes a report instead of pasting, then quits.
+///   Writes a report instead of pasting, then quits. Add `--paste-into-pid <pid>` to really
+///   deliver the text to that process (this replaces the clipboard).
 /// - `--transcribe-file <audio> <output.txt>`: just the speech pipeline; writes the model name
 ///   and the transcript, then quits.
 extension AppModel {
-    private static var reportURL: URL?
+    private struct Harness {
+        var report: URL
+        /// Deliver for real, into this app. Nil: a dry run that leaves the clipboard alone.
+        var pasteTarget: NSRunningApplication?
+    }
+
+    private static var harness: Harness?
 
     /// Returns true if a harness flag was given (the app then skips its normal setup).
     private func runHarnessIfRequested() -> Bool {
@@ -331,7 +341,9 @@ extension AppModel {
         if arguments.contains("--island-demo") {
             runIslandDemo()
         } else if let (audio, report) = values(after: "--dictate-file") {
-            Self.reportURL = report
+            let pid = arguments.firstIndex(of: "--paste-into-pid")
+                .flatMap { arguments.indices.contains($0 + 1) ? pid_t(arguments[$0 + 1]) : nil }
+            Self.harness = Harness(report: report, pasteTarget: pid.flatMap(NSRunningApplication.init(processIdentifier:)))
             Task { start(source: { onLevel in AudioFileSource(url: audio, realtime: true, onLevel: onLevel) }) }
         } else if let (audio, output) = values(after: "--transcribe-file") {
             transcribe(audio, to: output)
@@ -341,11 +353,16 @@ extension AppModel {
         return true
     }
 
-    /// For `--dictate-file`: writes the report and quits, instead of touching the clipboard.
-    private func writeHarnessReport(_ text: String, finishedBy trigger: FinishTrigger) -> Bool {
-        guard let url = Self.reportURL else { return false }
-        let report = "finished by: \(trigger.rawValue)\nwords: \(text.split(separator: " ").count)\n\(text)"
-        try? report.write(to: url, atomically: true, encoding: .utf8)
+    /// For `--dictate-file`: delivers only if a paste target was given, writes the report, quits.
+    private func finishHarnessRun(_ text: String, finishedBy trigger: FinishTrigger) async -> Bool {
+        guard let harness = Self.harness else { return false }
+        var outcome = "not delivered (dry run)"
+        if harness.pasteTarget != nil, !text.isEmpty {
+            outcome = "\(await TextDelivery.deliver(text, to: target))"
+            try? await Task.sleep(for: .milliseconds(400))  // let the paste land
+        }
+        let report = "finished by: \(trigger.rawValue)\noutcome: \(outcome)\nwords: \(text.split(separator: " ").count)\n\(text)"
+        try? report.write(to: harness.report, atomically: true, encoding: .utf8)
         exit(0)
     }
 

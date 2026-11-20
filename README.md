@@ -18,8 +18,9 @@ Transcript Island is a menu bar app (the waveform icon).
   shortcut from the menu bar icon.
 - **Pause for about 2 seconds** and it finishes on its own. **Esc** finishes right away.
   ("Finish when I pause" can be turned off in the menu; Esc is only captured while dictating.)
-- The text is typed into the text field you started in. If no text field was focused, it's on
-  the clipboard: press ⌘V. It's always copied to the clipboard as well, as a backup.
+- The text is typed into the app you started in, wherever its cursor is. If no text field is
+  focused there, it's on the clipboard: press ⌘V. It's always copied to the clipboard as well,
+  as a backup.
 - When it's done, the island says where the text went: "Inserted into Notes",
   "Copied · ⌘V to paste", "Copied · Accessibility is off", or "Nothing heard".
 
@@ -30,8 +31,10 @@ Transcript Island is a menu bar app (the waveform icon).
   focused text field and paste into it. Without it, the text is only copied to the clipboard.
   If macOS doesn't prompt, add the app with the **+** button and allow it.
 
-macOS shows its own indicator in the island while apps use Accessibility access. Transcript
-Island uses it briefly when a dictation starts and when it pastes.
+macOS shows its own indicator in the island whenever an app uses Accessibility access.
+Transcript Island only uses it at the moment it delivers the text (to check for a text field
+and paste), so the indicator appears as the bar closes, not while you talk. It lingers for
+about a minute; that's macOS's behavior.
 
 ## Requirements
 
@@ -105,6 +108,9 @@ open -n "$APP" --args --island-demo
 # pause detector ends it. Writes a report instead of pasting:
 say -o /tmp/sample.aiff "Testing, one two three"
 open -n "$APP" --args --dictate-file /tmp/sample.aiff /tmp/report.txt
+
+# The same, but really pasting into one process (this replaces the clipboard):
+open -n "$APP" --args --dictate-file /tmp/sample.aiff /tmp/report.txt --paste-into-pid 12345
 
 # Just the speech pipeline: writes the model name and the transcript.
 "$APP/Contents/MacOS/Transcript Island" --transcribe-file /tmp/sample.aiff /tmp/out.txt
