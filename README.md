@@ -18,23 +18,22 @@ Transcript Island is a menu bar app (the waveform icon).
   shortcut from the menu bar icon.
 - **Pause for about 2 seconds** and it finishes on its own. **Esc** finishes right away.
   ("Finish when I pause" can be turned off in the menu; Esc is only captured while dictating.)
-- The text is typed into the app you started in, wherever its cursor is. If no text field is
-  focused there, it's on the clipboard: press ⌘V. It's always copied to the clipboard as well,
-  as a backup.
-- When it's done, the island says where the text went: "Inserted into Notes",
+- The text is pasted into the app you started in, wherever its cursor is. It's always copied
+  to the clipboard as well, so if no text field was focused you can paste it yourself with ⌘V.
+- When it's done, the island says where the text went: "Pasted into Notes",
   "Copied · ⌘V to paste", "Copied · Accessibility is off", or "Nothing heard".
 
 ### Permissions
 
 - **Microphone**: asked for the first time you dictate.
-- **Accessibility** (System Settings › Privacy & Security › Accessibility): needed to find the
-  focused text field and paste into it. Without it, the text is only copied to the clipboard.
+- **Accessibility** (System Settings › Privacy & Security › Accessibility): needed to send the
+  paste keystroke (⌘V) to other apps. Without it, the text is only copied to the clipboard.
   If macOS doesn't prompt, add the app with the **+** button and allow it.
 
-macOS shows its own indicator in the island whenever an app uses Accessibility access.
-Transcript Island only uses it at the moment it delivers the text (to check for a text field
-and paste), so the indicator appears as the bar closes, not while you talk. It lingers for
-about a minute; that's macOS's behavior.
+macOS 27 shows an indicator in the island ("System & App Protection Override in use") for
+about a minute whenever an app reads another app's interface through the Accessibility API.
+Transcript Island never does that: it only sends the ⌘V keystroke, which doesn't trigger the
+indicator. The cost is that it can't tell whether a text field was focused.
 
 ## Requirements
 
@@ -71,7 +70,7 @@ DEVELOPMENT_TEAM = ABCDE12345
 
 | Path | What it is |
 | --- | --- |
-| `TranscriptIsland/` | The app. `AppModel` runs the flow: shortcut (`HotKey`) → microphone and `SpeechAnalyzer` (`DictationSession`, `AudioSources`) → the island (`IslandPanel`) → typing or copying the text (`TextDelivery`). |
+| `TranscriptIsland/` | The app. `AppModel` runs the flow: shortcut (`HotKey`) → microphone and `SpeechAnalyzer` (`DictationSession`, `AudioSources`) → the island (`IslandPanel`) → pasting or copying the text (`TextDelivery`). |
 | `Packages/TranscriptCore/` | Logic that needs no microphone or screen, with unit tests: `CaptionLines` (wraps the transcript into caption lines that roll up), `PauseDetector` (decides when you've stopped talking), `TranscriptCondenser` (accumulates the recognizer's results). |
 | `Config/` | Entitlements and signing settings. |
 | `Scripts/` | `install.sh`, and `make-icon.swift`, which draws the app icon. |
@@ -132,5 +131,5 @@ swift Scripts/make-icon.swift TranscriptIsland/Assets.xcassets/AppIcon.appiconse
 
 - The bundle ID is a placeholder (`com.example.TranscriptIsland.mac`). Changing it means
   granting the permissions again.
-- The app isn't sandboxed, because typing into other apps uses the Accessibility API and a
-  synthesized ⌘V. It would need notarizing to run on other Macs.
+- The app isn't sandboxed, because pasting into other apps uses a synthesized ⌘V. It would
+  need notarizing to run on other Macs.

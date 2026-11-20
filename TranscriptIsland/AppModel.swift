@@ -34,8 +34,9 @@ final class AppModel {
     private(set) var microphone = Permissions.microphone
     private(set) var accessibilityTrusted = Permissions.accessibilityTrusted
 
-    var insertIntoFocusedField: Bool {
-        didSet { UserDefaults.standard.set(insertIntoFocusedField, forKey: Keys.insert) }
+    /// Paste the text into the app you were using (otherwise it's only copied).
+    var pasteIntoApp: Bool {
+        didSet { UserDefaults.standard.set(pasteIntoApp, forKey: Keys.paste) }
     }
     /// Finish on its own after a pause (see `PauseDetector`), so Esc is optional.
     var autoFinish: Bool {
@@ -69,7 +70,7 @@ final class AppModel {
 
     private enum Keys {
         static let shortcut = "shortcut"
-        static let insert = "insertIntoFocusedField"
+        static let paste = "insertIntoFocusedField"  // the setting's original name
         static let autoFinish = "autoFinishOnPause"
     }
 
@@ -77,7 +78,7 @@ final class AppModel {
         let defaults = UserDefaults.standard
         shortcut = defaults.data(forKey: Keys.shortcut)
             .flatMap { try? JSONDecoder().decode(Shortcut.self, from: $0) } ?? .defaultShortcut
-        insertIntoFocusedField = defaults.object(forKey: Keys.insert) as? Bool ?? true
+        pasteIntoApp = defaults.object(forKey: Keys.paste) as? Bool ?? true
         autoFinish = defaults.object(forKey: Keys.autoFinish) as? Bool ?? true
 
         #if DEBUG
@@ -88,10 +89,10 @@ final class AppModel {
         escapeKey.onPress = { [weak self] in self?.finish(by: .escape) }
         shortcutRegistered = shortcutKey.register(shortcut)
 
-        // Typing into other apps needs Accessibility access. Ask at launch rather than
+        // Pasting into other apps needs Accessibility access. Ask at launch rather than
         // mid-dictation, where a prompt would take focus from the text field. If macOS shows
         // no prompt, the menu's Grant button opens the right page in System Settings.
-        if insertIntoFocusedField {
+        if pasteIntoApp {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
                 if !Permissions.accessibilityTrusted {
@@ -113,7 +114,7 @@ final class AppModel {
         guard session == nil else { return }
         resetTask?.cancel()
         refreshPermissions()
-        target = insertIntoFocusedField ? TextDelivery.captureTarget() : nil
+        target = pasteIntoApp ? TextDelivery.captureTarget() : nil
         #if DEBUG
         if let harness = Self.harness { target = harness.pasteTarget.map(InsertionTarget.init) }
         #endif
@@ -407,7 +408,7 @@ extension AppModel {
             }
             try? await Task.sleep(for: .seconds(1.5))
             levels.cancel()
-            island.finish(IslandResult(.inserted(appName: "Notes")))
+            island.finish(IslandResult(.pasted(appName: "Notes")))
             try? await Task.sleep(for: .seconds(2.5))
             exit(0)
         }

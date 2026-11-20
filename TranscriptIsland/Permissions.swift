@@ -26,7 +26,7 @@ enum Permissions {
         }
     }
 
-    /// Needed to find the focused text field and to paste into it.
+    /// Needed to send the paste keystroke (⌘V) to other apps.
     static var accessibilityTrusted: Bool {
         AXIsProcessTrusted()
     }

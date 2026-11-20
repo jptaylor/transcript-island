@@ -44,8 +44,8 @@ struct MenuContent: View {
 
             Toggle("Finish when I pause", isOn: $model.autoFinish)
 
-            Toggle("Type into the focused text field", isOn: $model.insertIntoFocusedField)
-            Text("Otherwise the text goes to the clipboard. It's always copied there as a backup.")
+            Toggle("Paste into the app I'm using", isOn: $model.pasteIntoApp)
+            Text("Otherwise the text is only copied to the clipboard. It's always copied there as a backup.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -59,7 +59,7 @@ struct MenuContent: View {
             )
             PermissionRow(
                 title: "Accessibility",
-                detail: "Needed to type into other apps",
+                detail: "Needed to paste into other apps",
                 isGranted: model.accessibilityTrusted,
                 actionTitle: "Grant…",
                 action: model.requestAccessibility
@@ -117,9 +117,9 @@ struct MenuContent: View {
         case .preparing(let message): message
         case .listening: "Listening…"
         case .finishing: "Finishing…"
-        case .done(.inserted(let appName)): "Inserted into \(appName)"
+        case .done(.pasted(let appName)): "Pasted into \(appName)"
         case .done(.copied(accessibilityOff: false)): "Copied to the clipboard"
-        case .done(.copied(accessibilityOff: true)): "Copied. Turn on Accessibility to insert"
+        case .done(.copied(accessibilityOff: true)): "Copied. Turn on Accessibility to paste"
         case .done(.nothingHeard): "Didn't catch anything"
         case .failed(let message): message
         }

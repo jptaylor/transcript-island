@@ -4,28 +4,32 @@ import Carbon.HIToolbox
 import os
 
 /// The app the text should go to: the one in front when dictation starts.
-///
-/// Only the app is noted at that point. Looking at its text field needs the Accessibility
-/// API, and macOS shows an indicator in the Dynamic Island whenever an app uses that access.
-/// That would sit on top of the dictation bar while you talk, so the check waits until the
-/// text is delivered.
 struct InsertionTarget {
     let app: NSRunningApplication
 }
 
 enum DeliveryOutcome: Equatable {
-    case inserted(appName: String)
-    /// Copied to the clipboard only. `accessibilityOff`: there may have been a text field,
-    /// but without Accessibility access the app can't find it or paste into it.
+    /// ⌘V was sent to the app. Whether a text field took it isn't known (see `TextDelivery`).
+    case pasted(appName: String)
+    /// Copied to the clipboard only. `accessibilityOff`: there was an app to paste into, but
+    /// without Accessibility access the app can't send it the keystroke.
     case copied(accessibilityOff: Bool)
     case nothingHeard
 }
 
+/// Gets the text into the app you were using: copies it to the clipboard, then sends ⌘V.
+///
+/// It deliberately doesn't look at the other app first (to check that a text field is
+/// focused). Reading another app's interface goes through the Accessibility API, and macOS
+/// shows an indicator in the Dynamic Island ("System & App Protection Override in use")
+/// whenever an app does that, for about a minute afterwards. Sending a keystroke doesn't
+/// trigger it. So if no text field is focused, ⌘V simply does nothing, and the text is still on
+/// the clipboard.
 @MainActor
 enum TextDelivery {
     private static let log = Logger.app("Delivery")
 
-    /// The app in front (other than this one). Makes no Accessibility calls.
+    /// The app in front (other than this one).
     static func captureTarget() -> InsertionTarget? {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier
@@ -33,18 +37,20 @@ enum TextDelivery {
         return InsertionTarget(app: app)
     }
 
-    /// Always copies `text` to the clipboard (as a backup). Then, if Accessibility access is
-    /// granted and the target app has a text field focused, pastes it there.
+    /// Always copies `text` to the clipboard (as a backup). Then, if there's an app to paste
+    /// into and Accessibility access is granted, brings it forward if needed and sends ⌘V.
     static func deliver(_ text: String, to target: InsertionTarget?) async -> DeliveryOutcome {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
         guard let target, !target.app.isTerminated else {
-            log.notice("copied only: no app to type into")
+            log.notice("copied only: no app to paste into")
             return .copied(accessibilityOff: false)
         }
         let name = target.app.bundleIdentifier ?? "pid \(target.app.processIdentifier)"
+        // Sending keystrokes to other apps needs Accessibility access. Checking for it doesn't
+        // count as using it.
         guard AXIsProcessTrusted() else {
             log.notice("copied only: Accessibility access is off (target \(name, privacy: .public))")
             return .copied(accessibilityOff: true)
@@ -53,54 +59,10 @@ enum TextDelivery {
             target.app.activate(from: .current, options: [])
             try? await Task.sleep(for: .milliseconds(200))
         }
-        guard focusedElementIsEditableText(in: target.app) else {
-            log.notice("copied only: no text field focused in \(name, privacy: .public)")
-            return .copied(accessibilityOff: false)
-        }
         postCommandV()
         log.notice("pasted into \(name, privacy: .public)")
-        return .inserted(appName: target.app.localizedName ?? "the app")
+        return .pasted(appName: target.app.localizedName ?? "the app")
     }
-
-    // MARK: - Accessibility
-
-    private static let textRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox"]
-
-    private static func focusedElementIsEditableText(in app: NSRunningApplication) -> Bool {
-        guard AXIsProcessTrusted() else { return false }
-        let appElement = AXUIElementCreateApplication(app.processIdentifier)
-        var focused = element(appElement, kAXFocusedUIElementAttribute)
-        if focused == nil {
-            // Chromium/Electron apps only build their accessibility tree when asked.
-            AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-            focused = element(appElement, kAXFocusedUIElementAttribute)
-        }
-        guard let focused else { return false }
-
-        if let role = string(focused, kAXRoleAttribute), textRoles.contains(role) {
-            return true
-        }
-        // Rich editors (web contenteditable, custom text views) expose a settable selection.
-        var settable: DarwinBoolean = false
-        let status = AXUIElementIsAttributeSettable(focused, kAXSelectedTextRangeAttribute as CFString, &settable)
-        return status == .success && settable.boolValue
-    }
-
-    private static func element(_ element: AXUIElement, _ attribute: String) -> AXUIElement? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
-              let value, CFGetTypeID(value) == AXUIElementGetTypeID()
-        else { return nil }
-        return (value as! AXUIElement)
-    }
-
-    private static func string(_ element: AXUIElement, _ attribute: String) -> String? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else { return nil }
-        return value as? String
-    }
-
-    // MARK: - Paste
 
     private static func postCommandV() {
         let source = CGEventSource(stateID: .combinedSessionState)

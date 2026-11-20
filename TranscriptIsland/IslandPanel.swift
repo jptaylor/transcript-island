@@ -90,7 +90,7 @@ struct IslandShape: Equatable {
 /// What the island shows when a dictation is over.
 struct IslandResult: Equatable {
     enum Kind {
-        case inserted, copied, warning, nothing
+        case pasted, copied, warning, nothing
     }
 
     var kind: Kind
@@ -104,7 +104,7 @@ struct IslandResult: Equatable {
 
     init(_ outcome: DeliveryOutcome) {
         switch outcome {
-        case .inserted(let appName): self.init(kind: .inserted, message: "Inserted into \(appName)")
+        case .pasted(let appName): self.init(kind: .pasted, message: "Pasted into \(appName)")
         case .copied(accessibilityOff: false): self.init(kind: .copied, message: "Copied · ⌘V to paste")
         case .copied(accessibilityOff: true): self.init(kind: .warning, message: "Copied · Accessibility is off")
         case .nothingHeard: self.init(kind: .nothing, message: "Nothing heard")
@@ -481,7 +481,7 @@ struct ResultMark: View {
 
     private var symbol: String {
         switch kind {
-        case .inserted: "checkmark.circle.fill"
+        case .pasted: "checkmark.circle.fill"
         case .copied: "doc.on.clipboard.fill"
         case .warning: "exclamationmark.circle.fill"
         case .nothing: "minus.circle.fill"
@@ -490,7 +490,7 @@ struct ResultMark: View {
 
     private var color: Color {
         switch kind {
-        case .inserted: .green
+        case .pasted: .green
         case .copied: .white.opacity(0.85)
         case .warning: .orange
         case .nothing: .secondary
