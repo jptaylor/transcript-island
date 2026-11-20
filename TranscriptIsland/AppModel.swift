@@ -354,17 +354,24 @@ extension AppModel {
         return true
     }
 
-    /// For `--dictate-file`: delivers only if a paste target was given, writes the report, quits.
+    /// For `--dictate-file`. A dry run writes the report and quits without delivering. With a
+    /// paste target, the text is delivered the normal way (so the island shows the result and
+    /// closes as usual), and the report is written once that's done.
     private func finishHarnessRun(_ text: String, finishedBy trigger: FinishTrigger) async -> Bool {
         guard let harness = Self.harness else { return false }
-        var outcome = "not delivered (dry run)"
-        if harness.pasteTarget != nil, !text.isEmpty {
-            outcome = "\(await TextDelivery.deliver(text, to: target))"
-            try? await Task.sleep(for: .milliseconds(400))  // let the paste land
+        let summary = "finished by: \(trigger.rawValue)\nwords: \(text.split(separator: " ").count)\n\(text)"
+        guard harness.pasteTarget != nil, !text.isEmpty else {
+            try? "outcome: not delivered (dry run)\n\(summary)".write(to: harness.report, atomically: true, encoding: .utf8)
+            exit(0)
         }
-        let report = "finished by: \(trigger.rawValue)\noutcome: \(outcome)\nwords: \(text.split(separator: " ").count)\n\(text)"
-        try? report.write(to: harness.report, atomically: true, encoding: .utf8)
-        exit(0)
+        Task {
+            try? await Task.sleep(for: .seconds(3))  // the result, then the island closing
+            var outcome = "unknown"
+            if case .done(let delivered) = phase { outcome = "\(delivered)" }
+            try? "outcome: \(outcome)\n\(summary)".write(to: harness.report, atomically: true, encoding: .utf8)
+            exit(0)
+        }
+        return false
     }
 
     private func transcribe(_ audio: URL, to output: URL) {
