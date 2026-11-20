@@ -1,0 +1,15 @@
+// Code signing.
+//
+// With no team set, builds are signed to run locally (ad hoc). That works, but macOS ties the
+// app's Accessibility permission to the exact build, so every rebuild silently revokes it.
+//
+// To keep permissions across rebuilds, sign with your Apple Development team: create
+// Config/Signing.local.xcconfig (git-ignored) containing
+//
+//     DEVELOPMENT_TEAM = ABCDE12345
+//
+// Your team ID is in Xcode › Settings › Accounts, or on developer.apple.com under Membership.
+
+CODE_SIGN_STYLE = Automatic
+
+#include? "Signing.local.xcconfig"
